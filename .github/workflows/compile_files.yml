@@ -1,0 +1,74 @@
+name: Compile Individual Rust Files
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # We explicitly use macos-15-intel to target x86_64 hardware
+        os: [ubuntu-latest, windows-latest, macos-15-intel]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Compile Rust files (Linux / Intel macOS)
+        if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-15-intel'
+        run: |
+          for file in *.rs; do
+            if [ -f "$file" ]; then
+              echo "Compiling $file..."
+              rustc "$file"
+            fi
+          done
+
+      - name: Compile Rust files (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Get-ChildItem -Filter *.rs | ForEach-Object {
+            Write-Host "Compiling $_..."
+            rustc $_.FullName
+          }
+
+      - name: Upload Linux Executables
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64-executables
+          path: |
+            *
+            !*.rs
+            !.*
+          if-no-files-found: ignore
+
+      - name: Upload Intel macOS Executables
+        if: matrix.os == 'macos-15-intel'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-x64-executables
+          path: |
+            *
+            !*.rs
+            !.*
+          if-no-files-found: ignore
+
+      - name: Upload Windows Executables
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-executables
+          path: |
+            *.exe
+          if-no-files-found: ignore
