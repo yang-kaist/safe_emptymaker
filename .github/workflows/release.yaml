@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            os: ubuntu-latest
+            archive: tar.gz
+
+          - name: windows-x64
+            os: windows-latest
+            archive: zip
+
+          - name: macos-x64
+            os: macos-15-intel
+            archive: tar.gz
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # Linux / macOS
+      - name: Compile Rust files
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+
+          for file in *.rs; do
+            if [ -f "$file" ]; then
+              name="${file%.rs}"
+              echo "Compiling $file -> dist/$name"
+              rustc "$file" -o "dist/$name"
+            fi
+          done
+
+      # Windows
+      - name: Compile Rust files
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+          Get-ChildItem -Filter *.rs | ForEach-Object {
+            $name = $_.BaseName
+            Write-Host "Compiling $($_.Name) -> dist/$name.exe"
+            rustc $_.FullName -o "dist/$name.exe"
+          }
+
+      # Linux / macOS archive
+      - name: Create tar.gz archive
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          tar -czf "${{ matrix.name }}.tar.gz" -C dist .
+
+      # Windows archive
+      - name: Create zip archive
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\* -DestinationPath "${{ matrix.name }}.zip"
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            *.tar.gz
+            *.zip
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all release archives
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          generate_release_notes: true
